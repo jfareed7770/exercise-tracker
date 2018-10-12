@@ -1,48 +1,106 @@
-const express = require('express')
-const app = express()
-const bodyParser = require('body-parser')
+const express = require('express');
+const app = express();
+const bodyParser = require('body-parser');
+const mongo = require("mongodb");
+const cors = require('cors');
 
-const cors = require('cors')
+const mongoose = require('mongoose');
+//mongoose.createConnection(process.env.MLAB_URI || 'mongodb://localhost/exercise-track');
+mongoose.connect("mongodb://localhost/exercisedb1");
+var db = mongoose.connection;
 
-const mongoose = require('mongoose')
-mongoose.connect(process.env.MLAB_URI || 'mongodb://localhost/exercise-track' )
+db.once('open',function(){console.log("DB connected!");})
+.on('error', console.error.bind(console, 'MongoDB connection error:'));
 
-app.use(cors())
+app.use(cors());
 
-app.use(bodyParser.urlencoded({extended: false}))
-app.use(bodyParser.json())
-
-
-app.use(express.static('public'))
+app.use(bodyParser.urlencoded({extended: true}));
+app.use(express.static('public'));
 app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/views/index.html')
+  res.sendFile(__dirname + '/views/index.html');
 });
 
+//---------------------------------------------------------------
 
-// Not found middleware
-app.use((req, res, next) => {
-  return next({status: 404, message: 'not found'})
-})
+var exerciseSchema = mongoose.Schema({
+  description: String,
+  duration: Number,
+  date: {type: Date, default: Date.now}
+});
 
-// Error Handling middleware
-app.use((err, req, res, next) => {
-  let errCode, errMessage
+var Exercise = mongoose.model("Exercise",exerciseSchema);
 
-  if (err.errors) {
-    // mongoose validation error
-    errCode = 400 // bad request
-    const keys = Object.keys(err.errors)
-    // report the first validation error
-    errMessage = err.errors[keys[0]].message
-  } else {
-    // generic or custom error
-    errCode = err.status || 500
-    errMessage = err.message || 'Internal Server Error'
+var userSchema = mongoose.Schema({
+    username: String,
+    userId: String,
+    exercises:[exerciseSchema]
+});
+
+var User = mongoose.model("User", userSchema);
+
+//retrieving all the users
+app.get("/api/exercise/users", function(req,res){
+  User.find({}, function(err,users){
+    if(err){
+      console.log("ERROR");
+    }else{
+      res.json(users);
+    }
+  });
+});
+
+//retrieving one user
+app.get("/api/exercise/log", function(req,res){
+  var uId = req.query.userId
+  User.findOne({userId:uId}, function(err,user){
+    if(err){
+      console.log("ERROR");
+    }else{
+      res.json(user);
+    }
+  })
+});
+
+//adding a user
+app.post("/api/exercise/new-user", function(req,res){
+    var uId = req.body.username.substring(0,2) + (Math.floor(Math.random()*1000000));
+    User.create({
+        username : req.body.username,
+        userId : uId
+      }, function(err, user){
+        if(err){
+            console.log("ERROR");
+        }else{
+            res.json(user);
+        }
+    });
+});
+
+//adding exercise to the user
+app.post("/api/exercise/add", function(req, res){
+   var uId = req.body.userId;
+
+   User.findOne({userId:uId},function(err,user){
+     if(err){
+       console.log("ERROR");
+     }else{
+       Exercise.create({
+         description : req.body.description,
+         duration : req.body.duration,
+         date : req.body.date
+       }, function(err, exercise){
+         if(err){
+           console.log(err);
+         }else{
+           user.exercises.push(exercise);
+           user.save();
+       res.json(user);
+     }
+    });
   }
-  res.status(errCode).type('txt')
-    .send(errMessage)
-})
+  });
+});
 
 const listener = app.listen(process.env.PORT || 3000, () => {
-  console.log('Your app is listening on port ' + listener.address().port)
-})
+  console.log('Your app is listening on port ' + listener.address().port);
+});
